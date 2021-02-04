@@ -14,3 +14,12 @@ This should install all packages required to run this code in a Julia environmen
 ```
 $ julia main.jl
 ```
+
+### Files
+Aside from `main.jl`, there are a few other files in this project:
+
+- Funnels.ipynb: a Jupyter notebook that was used for prototyping early iterations of this code. It is not maintained and should not do anything.
+- kuka.urdf: An urdf file containing information for a kuka iiwa 14. This enables the use of forward kinematics in calculating costs.
+- Manifest.toml and Project.toml: standard Julia package files
+- means.csv: A human trajectory, taken from the original CoMOTO implementation and annotated
+- vars.csv: A human variance trajectory associated with means.csv, taken from the original CoMOTO implementation
