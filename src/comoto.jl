@@ -1,4 +1,4 @@
-import Pkg; Pkg.activate(@__DIR__);
+import Pkg; Pkg.activate("..");
 
 using RobotDynamics, Rotations
 using TrajectoryOptimization
@@ -9,8 +9,6 @@ import ForwardDiff;
 import CSV;
 const RBD = RigidBodyDynamics;
 const TO = TrajectoryOptimization;
-
-# using Random
 
 function get_kuka_joint(kuka::Mechanism, jointname::String)
     ee_body = findbody(kuka, jointname)
@@ -337,7 +335,7 @@ function get_nominal_traj(start::AbstractVector, goal::AbstractVector, n_timeste
     for i = 1:length(start)
         ret_val[i,:] = collect(range(start[i], goal[i], length=n_timesteps));
     end
-    ret_val
+    SMatrix{length(start), n_timesteps}(ret_val)
 end
 
 function main()
@@ -354,7 +352,7 @@ function main()
     dt = 0.25;
     n_timesteps = 20;
     N_HUMAN_JOINTS = 11;
-    OBJECT_POS = [0,0.2,0.83];
+    OBJECT_POS = @SVector [0,0.2,0.83];
     
     # read in human trajectory means
     means_reader = CSV.File("means.csv");
@@ -365,13 +363,15 @@ function main()
     for row in means_reader
         i = 1;
         while i < N_HUMAN_JOINTS
-            human_traj[:,i,curr_timestep] = [row[3*(i-1) + x] for x=1:3];
+            human_traj[:,i,curr_timestep] .= [row[3*(i-1) + x] for x=1:3];
             i += 1;
         end
         head_traj[:,curr_timestep] = [row[s] for s in head_symbols];
 
         curr_timestep += 1;
     end
+    human_traj = SArray{Tuple{3,N_HUMAN_JOINTS,n_timesteps}}(human_traj);
+    head_traj = SArray{Tuple{3,n_timesteps}}(head_traj);
 
     # read in human trajectory vars
     vars_reader = CSV.File("vars.csv", header=false);
@@ -387,9 +387,11 @@ function main()
         curr_timestep += 1
     end
 
-    joint_start = [-0.7240388673767146, -0.34790398102066433, 2.8303899987665897, -2.54032606205873, 1.3329587647643253, 2.7596249683074614, 0.850582268802067]
+    human_vars_traj = SArray{Tuple{3,3,N_HUMAN_JOINTS,n_timesteps}}(human_vars_traj);
+
+    joint_start = @SVector [-0.7240388673767146, -0.34790398102066433, 2.8303899987665897, -2.54032606205873, 1.3329587647643253, 2.7596249683074614, 0.850582268802067]
     # joint_target = [0.04506347261090404, 1.029660363493563, -0.0563325987175789, -1.8024937659056217, 0.14645022654203643, 0.3406148976556631, -0.12291455548612884] #near reaching case
-    joint_target = [-0.3902233335085379, 1.7501020413442578, 0.8403277122861033, -0.22924505085794067, 2.8506926562622024, -1.417026666483551, -0.35668663982214976] #far reaching case
+    joint_target = @SVector [-0.3902233335085379, 1.7501020413442578, 0.8403277122861033, -0.22924505085794067, 2.8506926562622024, -1.417026666483551, -0.35668663982214976] #far reaching case
 
     nom_traj = get_nominal_traj(joint_start, joint_target, n_timesteps);
 
@@ -398,7 +400,7 @@ function main()
     dist_costs = get_distance_costs(ctrl_dims, state_dims, human_traj, human_vars_traj, x -> kuka_full_fk(x, kuka_tree));
     nom_costs = get_nominal_costs(ctrl_dims, state_dims, nom_traj, end_effector_fn);
     vel_costs = get_jointvel_costs(ctrl_dims, state_dims, n_timesteps);
-    weights = [2., 0.0015, 2., 0.1, 0.1];
+    weights = @SVector [2., 0.0015, 2., 0.1, 0.1];
     final_costs = [CompoundCost([leg_costs[i], vis_costs[i], dist_costs[i], nom_costs[i], vel_costs[i]], leg_costs[i].is_terminal, ctrl_dims, state_dims, weights) for i=1:n_timesteps];
 
 
@@ -427,8 +429,9 @@ function main()
     opts = SolverOptions(
         penalty_scaling=2.,
         iterations_inner=60,
+        iterations_outer=15,
         penalty_initial=0.1,
-        verbose=2,
+        verbose=1,
     )
 
     solver = ALTROSolver(prob, opts);
