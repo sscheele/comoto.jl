@@ -7,6 +7,7 @@ using RigidBodyDynamics;
 using Altro;
 import ForwardDiff;
 import CSV;
+using Dates;
 const RBD = RigidBodyDynamics;
 const TO = TrajectoryOptimization;
 
@@ -418,8 +419,8 @@ function main()
 
     cons = TO.ConstraintList(ctrl_dims, state_dims, n_timesteps);
     add_constraint!(cons, TO.GoalConstraint(joint_target), n_timesteps);
-    add_constraint!(cons, TO.BoundConstraint(ctrl_dims, state_dims, u_min=-10, u_max=10), 1:n_timesteps-1);
-    add_constraint!(cons, TO.BoundConstraint(ctrl_dims, state_dims, x_min=-2π, x_max=2π), 1:n_timesteps);
+    # add_constraint!(cons, TO.BoundConstraint(ctrl_dims, state_dims, u_min=-10, u_max=10), 1:n_timesteps-1);
+    # add_constraint!(cons, TO.BoundConstraint(ctrl_dims, state_dims, x_min=-2π, x_max=2π), 1:n_timesteps);
     prob = TO.Problem(model, obj, joint_target, tf, x0=joint_start, constraints=cons);
     initial_controls!(prob, U0);
 
@@ -428,6 +429,8 @@ function main()
 
     opts = SolverOptions(
         penalty_scaling=2.,
+        active_set_tolerance_pn=0.01,
+        verbose_pn=true,
         iterations_inner=60,
         iterations_outer=15,
         penalty_initial=0.1,
@@ -437,8 +440,17 @@ function main()
     solver = ALTROSolver(prob, opts);
     solve!(solver)
     println("Cost: ", cost(solver))
+    println("States: ", TO.states(solver))
+    println("Controls: ", TO.controls(solver))
+    println("Violated joint constraints: ", any(x->any(y->y<-2π||y>2π, x), TO.states(solver)))
+    println("Violated control constraints: ", any(x->any(y->y<-5||y>5, x), TO.controls(solver)))
+    println("Reaches goal: ", sq_norm(joint_target - TO.states(solver)[end]) < 0.01)
 
     
+    t_start = Dates.now()
+    newsolver = ALTROSolver(prob, opts);
+    solve!(newsolver)
+    println("Time to solve: ", Dates.now() - t_start)
 end
 
 main()
