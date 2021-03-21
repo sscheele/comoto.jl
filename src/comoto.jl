@@ -163,22 +163,35 @@ Returns the legibility cost for a given timestep
 
 jacobian: function that accepts a joint state and returns the Jacobian matrix J
 dt: the time allotted to one timestep (eg, 1.0 sec/timestep)
-goal: goal joint state
-start: initial joint state
+goalset: 3xN matrix possible goals - first element (goalset[:,1]) is "true goal"
+start: initial cartesian position
 """
-function legibility_costfn(x::AbstractVector, u::AbstractVector, jacobian::Function, dt::Float64, curr_timestep::Int, total_timesteps::Int, goal::AbstractVector, start::AbstractVector)
+function legibility_costfn(x::AbstractVector, u::AbstractVector, dt::Float64, curr_timestep::Int, total_timesteps::Int, goalset::AbstractMatrix, start::AbstractVector, ee_fn::Function)
     # return 0;
     # exp(-C(s->q) - C*(q->g))/exp(-C*(s->g))
     # = exp(-C(s->q) - C*(q->g) + C(s->g))
-    J = jacobian(x);
-    start_goal_vel = (goal - start)/(dt * total_timesteps);
-    nom_goal_vel = (goal - x)/(dt * (total_timesteps - curr_timestep));
-    curr_vel = J.linear*u;
-    ret_val = exp(-sq_norm(curr_vel) - sq_norm(nom_goal_vel) + sq_norm(start_goal_vel));
-    if isnan(ret_val)
-        println("NaN in legibility cost");
+    cart_x = ee_fn(x);
+    n_goals = size(goalset)[2];
+    # create matrices that we can subtract from goalset
+    start_rep, x_rep = repeat(start, outer=[1,n_goals]), repeat(cart_x, outer=[1,n_goals])
+    start_goal_velset = (goalset - start_rep)/(dt * total_timesteps);
+    nom_goal_velset = (goalset - x_rep)/(dt * (total_timesteps - curr_timestep));
+
+    goal_weight = exp(-sq_norm(nom_goal_velset[:,1]) + sq_norm(start_goal_velset[:,1]));
+    total_weight = goal_weight;
+    for i = 2:n_goals
+        total_weight += exp(-sq_norm(nom_goal_velset[:,i]) + sq_norm(start_goal_velset[:,i]));
     end
-    ret_val
+    leg = goal_weight/total_weight    
+    if isnan(leg)
+        println("NaN in legibility cost");
+        if isa(curr_velnorm, Float64)
+            println(start_goal_velset, nom_goal_velset);
+        else
+            println(start_goal_velset, nom_goal_velset);
+        end
+    end
+    1-leg
 end
 
 """
@@ -186,11 +199,14 @@ Returns an array of length total_timesteps of legibility cost functions
 
 n: state dim
 m: control dim
+goalset: 3xn set of goal candidates, true goal at goalset[:,1]
+start: joint start position
 """
-function get_legibility_costs(n::Int, m::Int, jacobian::Function, dt::Float64, total_timesteps::Int, goal::AbstractVector, start::AbstractVector)
+function get_legibility_costs(n::Int, m::Int, dt::Float64, total_timesteps::Int, goalset::AbstractMatrix, start::AbstractVector, ee_fn::Function)
     ret_val = GeneralCost{n,m}[];
+    cart_start = ee_fn(start);
     for i = 0:(total_timesteps - 2)
-        append!(ret_val, [GeneralCost{n,m}((x, u) -> legibility_costfn(x, u, jacobian, dt, i, total_timesteps, goal, start), false)]);
+        append!(ret_val, [GeneralCost{n,m}((x, u) -> legibility_costfn(x, u, dt, i, total_timesteps, goalset, cart_start, ee_fn), false)]);
     end
     append!(ret_val, [GeneralCost{n,m}(x -> 0, true)]);
     ret_val
@@ -304,6 +320,8 @@ function get_distance_costs(n::Int, m::Int, human_traj::AbstractArray, human_var
     ret_val
 end
 
+# function smoothness_costfn()
+
 function nominal_costfn(cart_eef::AbstractVector, goal_eef::AbstractVector)
     ret_val = sq_norm(cart_eef .- goal_eef);
     if isnan(ret_val)
@@ -347,13 +365,16 @@ function main()
     end_effector_fn = get_kuka_ee_postition_fun(kuka_tree);
     jacobian_fn = get_kuka_jacobian_fun(kuka_tree);
     # should be about [0, 0, 1.306]
+    joint_target = @SVector [-0.3902233335085379, 1.7501020413442578, 0.8403277122861033, -0.22924505085794067, 2.8506926562622024, -1.417026666483551, -0.35668663982214976] #far reaching case
     # @show kuka_full_fk([0, 0, 0, 0, 0, 0, 0], kuka_tree)
+    @show kuka_full_fk(joint_target, kuka_tree);
     ctrl_dims = 7;
     state_dims = 7;
     dt = 0.25;
     n_timesteps = 20;
     N_HUMAN_JOINTS = 11;
-    OBJECT_POS = @SVector [0,0.2,0.83];
+    OBJECT_SET = SArray{Tuple{3,2}}(reshape([0.5,0.,-0.17, 0.6, 0., -0.17], (3,2)));
+    OBJECT_POS = OBJECT_SET[:,1];
     
     # read in human trajectory means
     means_reader = CSV.File("means.csv");
@@ -394,9 +415,16 @@ function main()
     # joint_target = [0.04506347261090404, 1.029660363493563, -0.0563325987175789, -1.8024937659056217, 0.14645022654203643, 0.3406148976556631, -0.12291455548612884] #near reaching case
     joint_target = @SVector [-0.3902233335085379, 1.7501020413442578, 0.8403277122861033, -0.22924505085794067, 2.8506926562622024, -1.417026666483551, -0.35668663982214976] #far reaching case
 
+    # uncomment these lines to switch to single-timestep trajectories
+    # n_timesteps = 3;
+    # human_traj = human_traj[:,:,[1,10,20]];
+    # human_vars_traj = human_vars_traj[:,:,:,[1,10,20]];
+    # head_traj = head_traj[:,[1,10,20]];
+    # dt = 2.5;
+
     nom_traj = get_nominal_traj(joint_start, joint_target, n_timesteps);
 
-    leg_costs = get_legibility_costs(ctrl_dims, state_dims, jacobian_fn, 0.1, n_timesteps, joint_target, joint_start);
+    leg_costs = get_legibility_costs(ctrl_dims, state_dims, dt, n_timesteps, OBJECT_SET, joint_start, end_effector_fn);
     vis_costs = get_visibility_costs(ctrl_dims, state_dims, head_traj, OBJECT_POS, end_effector_fn);
     dist_costs = get_distance_costs(ctrl_dims, state_dims, human_traj, human_vars_traj, x -> kuka_full_fk(x, kuka_tree));
     nom_costs = get_nominal_costs(ctrl_dims, state_dims, nom_traj, end_effector_fn);
@@ -405,22 +433,16 @@ function main()
     final_costs = [CompoundCost([leg_costs[i], vis_costs[i], dist_costs[i], nom_costs[i], vel_costs[i]], leg_costs[i].is_terminal, ctrl_dims, state_dims, weights) for i=1:n_timesteps];
 
 
-    tf = n_timesteps*dt;
+    tf = (n_timesteps-1)*dt;
     obj = TO.Objective(final_costs);
     ctrl_linear = (joint_target - joint_start)/tf;
     U0 = [ctrl_linear for _ in 1:(n_timesteps-1)];
 
-    # for i = 1:(n_timesteps-1)
-    #     println("Cost " * string(i) * ": " * string(TO.stage_cost(final_costs[i], (i-1)*ctrl_linear, ctrl_linear)));
-    #     tmp = TO.QuadraticCost(zeros(7,7), diagm(ones(7)));
-    #     TO.gradient!(tmp, final_costs[i], (i-1)*ctrl_linear, ctrl_linear);
-    #     println("Gradient " * string(i) * " max: " * string(sum(tmp.q) + sum(tmp.r)));
-    # end
-
     cons = TO.ConstraintList(ctrl_dims, state_dims, n_timesteps);
     add_constraint!(cons, TO.GoalConstraint(joint_target), n_timesteps);
-    # add_constraint!(cons, TO.BoundConstraint(ctrl_dims, state_dims, u_min=-10, u_max=10), 1:n_timesteps-1);
-    # add_constraint!(cons, TO.BoundConstraint(ctrl_dims, state_dims, x_min=-2π, x_max=2π), 1:n_timesteps);
+    add_constraint!(cons, TO.BoundConstraint(ctrl_dims, state_dims, u_min=-10, u_max=10), 1:n_timesteps-1);
+    # cannot constrain final timestep twice
+    add_constraint!(cons, TO.BoundConstraint(ctrl_dims, state_dims, x_min=-2π, x_max=2π), 1:n_timesteps-1);
     prob = TO.Problem(model, obj, joint_target, tf, x0=joint_start, constraints=cons);
     initial_controls!(prob, U0);
 
@@ -428,7 +450,7 @@ function main()
     # rollout!(prob);
 
     opts = SolverOptions(
-        penalty_scaling=2.,
+        penalty_scaling=10.,
         active_set_tolerance_pn=0.01,
         verbose_pn=true,
         iterations_inner=60,
@@ -445,12 +467,15 @@ function main()
     println("Violated joint constraints: ", any(x->any(y->y<-2π||y>2π, x), TO.states(solver)))
     println("Violated control constraints: ", any(x->any(y->y<-5||y>5, x), TO.controls(solver)))
     println("Reaches goal: ", sq_norm(joint_target - TO.states(solver)[end]) < 0.01)
+    println(TO.states(solver))
 
-    
-    t_start = Dates.now()
-    newsolver = ALTROSolver(prob, opts);
-    solve!(newsolver)
-    println("Time to solve: ", Dates.now() - t_start)
+    # for _ = 1:10
+        t_start = Dates.now()
+        newsolver = ALTROSolver(prob, opts);
+        solve!(newsolver)
+        println("Time to solve: ", Dates.now() - t_start)
+        println(TO.states(newsolver))
+    # end
 end
 
 main()
