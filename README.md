@@ -23,6 +23,12 @@ $ julia comoto.jl
 julia> using Conda; Conda.add("ros-rospy", channel="conda-forge");
 ```
 
+Rviz offset: the RViz model used in the RAIL pipeline is up on a table, which offsets it from the model used in this code, which is not on a table. The offset is, approximately:
+
+```
+jl_pos = rviz_pos + [0.5, 0, -0.75]
+```
+
 ### Files
 Aside from `main.jl`, there are a few other files in this project:
 
