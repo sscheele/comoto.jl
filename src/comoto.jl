@@ -14,7 +14,7 @@ include("ros_interface.jl")
 const RBD = RigidBodyDynamics;
 const TO = TrajectoryOptimization;
 
-const OBJECT_SET = SArray{Tuple{3,2}}(reshape([0.5,0.,-0.17, 0.8, 0., -0.17], (3,2)));
+const OBJECT_SET = SArray{Tuple{3,2}}(reshape([0.752,-0.19,0.089, 0.752, 0.09, -0.089], (3,2)));
 const OBJECT_POS = OBJECT_SET[:,1];
 
 function get_kuka_joint(kuka::Mechanism, jointname::String)
@@ -74,6 +74,36 @@ RobotDynamics.state_dim(::Kuka) = 7
 
 function RobotDynamics.dynamics(model::Kuka, x, u)
     u
+end
+
+struct PosEECons <: TO.StateConstraint
+    n::Int
+    n_joints::Int
+    lower_bounds::SArray{Tuple{3}, Float64}
+    upper_bounds::SArray{Tuple{3}, Float64}
+    fk::Function
+end
+
+TO.state_dim(con::PosEECons) = con.n
+TO.sense(::PosEECons) = TO.Inequality()
+Base.length(con::PosEECons) = 6*con.n_joints
+function TO.evaluate(cons::PosEECons, x::StaticVector{l, T}) where {l, T}
+    # println("State size: "*string(size(x)))
+    xyz = cons.fk(x)
+    ans = T[]
+
+    curr_idx = 1;
+    for i = 1:cons.n_joints
+        joint_pos = xyz[:,i]
+        append!(ans, cons.lower_bounds - joint_pos)
+        append!(ans, joint_pos - cons.upper_bounds)
+        curr_idx += 6;
+    end
+
+    # if any(isnan.(ans))
+    #     println("NaN in constraints")
+    # end
+    return SArray{Tuple{6*cons.n_joints}, T}(ans)
 end
 
 abstract type GeneralCostFunction{n,m} <: TO.CostFunction end
@@ -396,15 +426,17 @@ function test_pure_legibility()
     add_constraint!(cons, TO.BoundConstraint(ctrl_dims, state_dims, u_min=-10, u_max=10), 1:n_timesteps-1);
     # cannot constrain final timestep twice
     add_constraint!(cons, TO.BoundConstraint(ctrl_dims, state_dims, x_min=-2π, x_max=2π), 1:n_timesteps-1);
-    
+    # add table constraints
+    add_constraint!(cons, PosEECons(ctrl_dims, ctrl_dims, SA_F64[-100, -100, 0], SA_F64[100,100,100], x -> kuka_full_fk(x, kuka_tree)), 2:n_timesteps-1);
+
     opts = SolverOptions(
         penalty_scaling=10.,
         active_set_tolerance_pn=0.01,
-        verbose_pn=true,
+        # verbose_pn=true,
         iterations_inner=60,
         iterations_outer=15,
         penalty_initial=0.1,
-        verbose=1,
+        verbose=1
     )
 
     while true
@@ -420,6 +452,8 @@ function test_pure_legibility()
 
         solver = ALTROSolver(prob, opts);
         solve!(solver);
+        println(TO.states(solver))
+        println("Reaches goal: ", sq_norm(joint_target - TO.states(solver)[end]) < 0.01)
         confirm_display_traj(solver, dt)
     end
 end

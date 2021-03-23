@@ -12,7 +12,15 @@ julia> Pkg.instantiate();
 This should install all packages required to run this code in a Julia environment specific to this project. The current code (currently in early beta mode) can be run from the terminal with:
 
 ```
-$ julia main.jl
+$ cd src
+$ julia comoto.jl
+```
+
+#### ROS
+`RobotOS.jl` makes Python calls and maintains its own Python environment, meaning that you need to preinstall `rospy` in the Julia environment. 
+
+```
+julia> using Conda; Conda.add("ros-rospy", channel="conda-forge");
 ```
 
 ### Files
