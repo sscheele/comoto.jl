@@ -21,13 +21,6 @@ function main()
     )
     prob_info = get_kuka_probinfo(params)
     
-    # uncomment these lines to switch to single-timestep trajectories
-    # n_timesteps = 3;
-    # human_traj = human_traj[:,:,[1,10,20]];
-    # human_vars_traj = human_vars_traj[:,:,:,[1,10,20]];
-    # head_traj = head_traj[:,[1,10,20]];
-    # dt = 2.5;
-    
     weights = @SVector [2., 0.0015, 2., 0.1, 0.1];
     prob = get_comoto_problem(model, prob_info, weights)
 

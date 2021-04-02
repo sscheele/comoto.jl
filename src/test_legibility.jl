@@ -1,31 +1,40 @@
 include("comoto.jl")
 
+const OBJECT_SET = SArray{Tuple{3,2}}(reshape([0.752,-0.19,0.089, 0.752, 0.09, -0.089], (3,2)));
+const OBJECT_POS = OBJECT_SET[:,1];
+
 function test_pure_legibility()
     model = Kuka(0)
-    # size(model)
 
-    kuka_tree = parse_urdf("kuka.urdf",remove_fixed_tree_joints=false)
-    end_effector_fn = get_kuka_ee_postition_fun(kuka_tree);
-
-    ctrl_dims, state_dims, dt = 7, 7, 0.25
-    n_timesteps = 20
-    joint_target = @SVector [-0.3902233335085379, 1.7501020413442578, 0.8403277122861033, -0.22924505085794067, 2.8506926562622024, -1.417026666483551, -0.35668663982214976] #far reaching case
     joint_start = @SVector [-0.7240388673767146, -0.34790398102066433, 2.8303899987665897, -2.54032606205873, 1.3329587647643253, 2.7596249683074614, 0.850582268802067]
+    # joint_target = [0.04506347261090404, 1.029660363493563, -0.0563325987175789, -1.8024937659056217, 0.14645022654203643, 0.3406148976556631, -0.12291455548612884] #near reaching case
+    joint_target = @SVector [-0.3902233335085379, 1.7501020413442578, 0.8403277122861033, -0.22924505085794067, 2.8506926562622024, -1.417026666483551, -0.35668663982214976] #far reaching case
+    n_timesteps = 20;
+    dt = 0.25;
 
-    leg_costs = get_legibility_costs(ctrl_dims, state_dims, dt, n_timesteps, OBJECT_SET, joint_start, end_effector_fn);
-    vel_costs = get_jointvel_costs(ctrl_dims, state_dims, n_timesteps);
+    params = ComotoParameters(
+        joint_start,
+        joint_target,
+        n_timesteps,
+        dt,
+        OBJECT_SET
+    )
+    prob_info = get_kuka_probinfo(params)
+
+    leg_costs = get_legibility_costs(prob_info);
+    vel_costs = get_jointvel_costs(prob_info);
 
     tf = (n_timesteps-1)*dt;
     ctrl_linear = (joint_target - joint_start)/tf;
     U0 = [ctrl_linear for _ in 1:(n_timesteps-1)];
 
-    cons = TO.ConstraintList(ctrl_dims, state_dims, n_timesteps);
+    cons = TO.ConstraintList(prob_info.ctrl_dims, prob_info.state_dims, n_timesteps);
     add_constraint!(cons, TO.GoalConstraint(joint_target), n_timesteps);
-    add_constraint!(cons, TO.BoundConstraint(ctrl_dims, state_dims, u_min=-10, u_max=10), 1:n_timesteps-1);
+    add_constraint!(cons, TO.BoundConstraint(prob_info.ctrl_dims, prob_info.state_dims, u_min=-10, u_max=10), 1:n_timesteps-1);
     # cannot constrain final timestep twice
-    add_constraint!(cons, TO.BoundConstraint(ctrl_dims, state_dims, x_min=-2π, x_max=2π), 1:n_timesteps-1);
+    add_constraint!(cons, TO.BoundConstraint(prob_info.ctrl_dims, prob_info.state_dims, x_min=-2π, x_max=2π), 1:n_timesteps-1);
     # add table constraints
-    add_constraint!(cons, PosEECons(ctrl_dims, ctrl_dims, SA_F64[-100, -100, 0], SA_F64[100,100,100], x -> kuka_full_fk(x, kuka_tree)), 2:n_timesteps-1);
+    add_constraint!(cons, PosEECons(prob_info.ctrl_dims, prob_info.ctrl_dims, SA_F64[-100, -100, 0], SA_F64[100,100,100], prob_info.full_fk), 2:n_timesteps-1);
 
     opts = SolverOptions(
         penalty_scaling=10.,
@@ -43,7 +52,7 @@ function test_pure_legibility()
         println("Enter velocity weight")
         vel_weight = parse(Float64, readline(stdin))
         weights = @SVector [leg_weight, vel_weight];
-        final_costs = [CompoundCost([leg_costs[i], vel_costs[i]], leg_costs[i].is_terminal, ctrl_dims, state_dims, weights) for i=1:n_timesteps];
+        final_costs = [CompoundCost([leg_costs[i], vel_costs[i]], leg_costs[i].is_terminal, prob_info.ctrl_dims, prob_info.state_dims, weights) for i=1:n_timesteps];
         obj = TO.Objective(final_costs);
         prob = TO.Problem(model, obj, joint_target, tf, x0=joint_start, constraints=cons);
         initial_controls!(prob, U0);
