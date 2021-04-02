@@ -6,64 +6,13 @@ using StaticArrays, LinearAlgebra
 using RigidBodyDynamics;
 using Altro;
 import ForwardDiff;
-import CSV;
 using Dates;
 
 include("ros_interface.jl")
+include("problem_info.jl")
 
 const RBD = RigidBodyDynamics;
 const TO = TrajectoryOptimization;
-
-const OBJECT_SET = SArray{Tuple{3,2}}(reshape([0.752,-0.19,0.089, 0.752, 0.09, -0.089], (3,2)));
-const OBJECT_POS = OBJECT_SET[:,1];
-
-function get_kuka_joint(kuka::Mechanism, jointname::String)
-    ee_body = findbody(kuka, jointname)
-    ee_point = Point3D(default_frame(ee_body),0.,0.,0.)
-    return ee_body, ee_point
-end
-
-function kuka_full_fk(x::AbstractVector{T},kuka::Mechanism,statecache=StateCache(kuka)) where T
-    kuka_joints = ["iiwa_link_1", "iiwa_link_2", "iiwa_link_3",
-        "iiwa_link_4", "iiwa_link_5", "iiwa_link_6", "iiwa_link_7"]
-    state_vec = T[];
-    state = statecache[T];
-    world = root_frame(kuka);
-    nn = num_positions(kuka);
-
-    RBD.set_configuration!(state, x[1:nn])
-    idx = 1;
-    for jointname in kuka_joints
-        body, point = get_kuka_joint(kuka, jointname);
-        append!(state_vec, RBD.transform(state, point, world).v);
-        idx += 3;
-    end
-    reshape(state_vec, (3,:))
-end
-
-function get_kuka_jacobian_fun(kuka::Mechanism,statecache=StateCache(kuka))
-    root_body = RigidBodyDynamics.findbody(kuka, "base");
-    ee_body = RigidBodyDynamics.findbody(kuka, "iiwa_link_ee");
-    joint_path = RigidBodyDynamics.path(kuka, root_body, ee_body);
-
-    function kuka_jacobian(x::AbstractVector{T}) where T
-        state = statecache[T]
-        RBD.set_configuration!(state, x)
-        RigidBodyDynamics.geometric_jacobian(state, joint_path)
-    end
-end
-
-function get_kuka_ee_postition_fun(kuka::Mechanism,statecache=StateCache(kuka))
-    ee_body, ee_point = get_kuka_joint(kuka, "iiwa_link_ee")
-    world = root_frame(kuka)
-    nn = num_positions(kuka)
-
-    function ee_position(x::AbstractVector{T}) where T
-        state = statecache[T]
-        RBD.set_configuration!(state, x[1:nn])
-        RBD.transform(state, ee_point, world).v
-    end
-end
 
 struct Kuka <: TrajectoryOptimization.AbstractModel
     id::Int32
@@ -238,11 +187,13 @@ m: control dim
 goalset: 3xn set of goal candidates, true goal at goalset[:,1]
 start: joint start position
 """
-function get_legibility_costs(n::Int, m::Int, dt::Float64, total_timesteps::Int, goalset::AbstractMatrix, start::AbstractVector, ee_fn::Function)
+
+function get_legibility_costs(info::ComotoProblemInfo)
+    n, m = info.state_dims, info.ctrl_dims
     ret_val = GeneralCost{n,m}[];
-    cart_start = ee_fn(start);
-    for i = 0:(total_timesteps - 2)
-        append!(ret_val, [GeneralCost{n,m}((x, u) -> legibility_costfn(x, u, dt, i, total_timesteps, goalset, cart_start, ee_fn), false)]);
+    cart_start = info.eef_fk(info.joint_start);
+    for i = 0:(info.n_timesteps - 2)
+        append!(ret_val, [GeneralCost{n,m}((x, u) -> legibility_costfn(x, u, info.dt, i, info.n_timesteps, info.goal_set, cart_start, info.eef_fk), false)]);
     end
     append!(ret_val, [GeneralCost{n,m}(x -> 0, true)]);
     ret_val
@@ -252,9 +203,10 @@ function jointvel_costfn(u::AbstractVector)
     sq_norm(u)
 end
 
-function get_jointvel_costs(n::Int, m::Int, n_timesteps::Int)
+function get_jointvel_costs(info::ComotoProblemInfo)
+    n, m = info.state_dims, info.ctrl_dims
     ret_val = GeneralCost{n,m}[];
-    for i = 0:(n_timesteps - 2)
+    for i = 0:(info.n_timesteps - 2)
         append!(ret_val, [GeneralCost{n,m}((x, u) -> jointvel_costfn(u), false)]);
     end
     append!(ret_val, [GeneralCost{n,m}(x -> 0, true)]);
@@ -278,13 +230,14 @@ m: control dim
 head_traj: 3xNUM_TIMESTEPS matrix of head positions
 eef_posfn: fk function (joint state) -> cartesian eef position
 """
-function get_visibility_costs(n::Int, m::Int, head_traj::AbstractMatrix, object_pos::AbstractVector, ee_posfn::Function)
+function get_visibility_costs(info::ComotoProblemInfo)
+    #n::Int, m::Int, head_traj::AbstractMatrix, object_pos::AbstractVector, ee_posfn::Function
+    n, m = info.state_dims, info.ctrl_dims
     ret_val = GeneralCost{n,m}[];
-    n_timesteps = size(head_traj)[2]
-    for i = 1:(n_timesteps - 1)
-        append!(ret_val, [GeneralCost{n,m}((x, u) -> visibility_costfn(ee_posfn(x), object_pos - head_traj[:,i]), false)]);
+    for i = 1:(info.n_timesteps - 1)
+        append!(ret_val, [GeneralCost{n,m}((x, u) -> visibility_costfn(info.eef_fk(x), info.object_pos - info.head_traj[:,i]), false)]);
     end
-    append!(ret_val, [GeneralCost{n,m}(x -> visibility_costfn(ee_posfn(x), object_pos - head_traj[:,end]), true)]);
+    append!(ret_val, [GeneralCost{n,m}(x -> visibility_costfn(info.eef_fk(x), info.object_pos - info.head_traj[:,end]), true)]);
     ret_val
 end
 
@@ -344,19 +297,19 @@ human_traj: 3xN_HUMAN_JOINTSxN_TIMESTEPS human cartesian trajectory
 human_var_traj: 3x3xN_HUMAN_JOINTSxN_TIMESTEPS array of arrays of human joint covariance matrices
 fk: forward kinematics function (joint state) -> list of joint cartesian positions
 """
-function get_distance_costs(n::Int, m::Int, human_traj::AbstractArray, human_var_traj::AbstractArray, fk::Function)
+function get_distance_costs(info::ComotoProblemInfo)
+    #n::Int, m::Int, human_traj::AbstractArray, human_var_traj::AbstractArray, fk::Function
+    n, m = info.state_dims, info.ctrl_dims
     ret_val = GeneralCost{n,m}[];
-    n_timesteps = size(human_traj)[3]
-    for i = 1:(n_timesteps - 1)
-        curr_hpos = human_traj[:,:,i];
-        curr_hvars = human_var_traj[:,:,:,i];
-        append!(ret_val, [GeneralCost{n,m}((x, u) -> distance_costfn(fk(x), curr_hpos, curr_hvars), false)]);
+    
+    for i = 1:(info.n_timesteps - 1)
+        curr_hpos = info.human_traj[:,:,i];
+        curr_hvars = info.human_vars_traj[:,:,:,i];
+        append!(ret_val, [GeneralCost{n,m}((x, u) -> distance_costfn(info.full_fk(x), curr_hpos, curr_hvars), false)]);
     end
-    append!(ret_val, [GeneralCost{n,m}((x) -> distance_costfn(fk(x), human_traj[:,:,end], human_var_traj[:,:,:,end]), true)]);
+    append!(ret_val, [GeneralCost{n,m}((x) -> distance_costfn(info.full_fk(x), info.human_traj[:,:,end], info.human_vars_traj[:,:,:,end]), true)]);
     ret_val
 end
-
-# function smoothness_costfn()
 
 function nominal_costfn(cart_eef::AbstractVector, goal_eef::AbstractVector)
     ret_val = sq_norm(cart_eef .- goal_eef);
@@ -372,25 +325,49 @@ Return a list of length N_TIMESTEPS of nominal costs
 nominal_traj: N_ROBOT_JOINTSxN_TIMESTEPS robot joint trajectory
 eef_fk: Forward kinematics (joint state)->eef position
 """
-function get_nominal_costs(n::Int, m::Int, nominal_traj::AbstractMatrix, eef_fk::Function)
+function get_nominal_costs(info::ComotoProblemInfo)
+    #n::Int, m::Int, nominal_traj::AbstractMatrix, eef_fk::Function
+    n, m = info.state_dims, info.ctrl_dims
     ret_val = GeneralCost{n,m}[];
-    n_timesteps = size(nominal_traj)[2]
 
-    nom_eef_traj = [eef_fk(nominal_traj[:, i]) for i=1:n_timesteps];
-    for i = 1:(n_timesteps - 1)
-        append!(ret_val, [GeneralCost{n,m}((x, u) -> nominal_costfn(eef_fk(x), nom_eef_traj[i]), false)]);
+    nom_eef_traj = [info.eef_fk(info.nominal_traj[:, i]) for i=1:info.n_timesteps];
+    for i = 1:(info.n_timesteps - 1)
+        append!(ret_val, [GeneralCost{n,m}((x, u) -> nominal_costfn(info.eef_fk(x), nom_eef_traj[i]), false)]);
     end
-    append!(ret_val, [GeneralCost{n,m}(x->nominal_costfn(eef_fk(x), nom_eef_traj[end]), true)]);
+    append!(ret_val, [GeneralCost{n,m}(x->nominal_costfn(info.eef_fk(x), nom_eef_traj[end]), true)]);
     ret_val
 end
 
-function get_nominal_traj(start::AbstractVector, goal::AbstractVector, n_timesteps::Int)
-    @assert length(start) == length(goal);
-    ret_val = zeros(length(start), n_timesteps);
-    for i = 1:length(start)
-        ret_val[i,:] = collect(range(start[i], goal[i], length=n_timesteps));
-    end
-    SMatrix{length(start), n_timesteps}(ret_val)
+"""
+Weights: leg, vis, dist, nom, vel
+"""
+function get_comoto_costs(info::ComotoProblemInfo, weights::AbstractVector)
+    leg_costs = get_legibility_costs(info);
+    vis_costs = get_visibility_costs(info);
+    dist_costs = get_distance_costs(info);
+    nom_costs = get_nominal_costs(info);
+    vel_costs = get_jointvel_costs(info);
+    return [CompoundCost([leg_costs[i], vis_costs[i], dist_costs[i], nom_costs[i], vel_costs[i]], leg_costs[i].is_terminal, info.ctrl_dims, info.state_dims, weights) for i=1:info.n_timesteps];
+end
+
+function get_comoto_problem(model::TO.AbstractModel, info::ComotoProblemInfo, weights::AbstractVector)
+    final_costs = get_comoto_costs(info, weights)
+    n_timesteps = info.n_timesteps
+    tf = (n_timesteps-1)*info.dt;
+    obj = TO.Objective(final_costs);
+    ctrl_linear = (info.joint_target - info.joint_start)/tf;
+    U0 = [ctrl_linear for _ in 1:(n_timesteps-1)];
+
+    cons = TO.ConstraintList(info.ctrl_dims, info.state_dims, n_timesteps);
+    add_constraint!(cons, TO.GoalConstraint(info.joint_target), n_timesteps);
+    add_constraint!(cons, TO.BoundConstraint(info.ctrl_dims, info.state_dims, u_min=-10, u_max=10), 1:n_timesteps-1);
+    # cannot constrain final timestep twice
+    add_constraint!(cons, TO.BoundConstraint(info.ctrl_dims, info.state_dims, x_min=-2π, x_max=2π), 1:n_timesteps-1);
+    add_constraint!(cons, PosEECons(info.ctrl_dims, info.ctrl_dims, SA_F64[-100, -100, 0], SA_F64[100,100,100], info.full_fk), 2:n_timesteps-1);
+
+    prob = TO.Problem(model, obj, info.joint_target, tf, x0=info.joint_start, constraints=cons);
+    initial_controls!(prob, U0);
+    prob
 end
 
 function confirm_display_traj(solver::ALTROSolver, dt::Float64)
@@ -401,180 +378,3 @@ function confirm_display_traj(solver::ALTROSolver, dt::Float64)
     readline(stdin)
     dispatch_trajectory(hcat(TO.states(solver)...), dt, 0.)
 end
-
-function test_pure_legibility()
-    model = Kuka(0)
-    # size(model)
-
-    kuka_tree = parse_urdf("kuka.urdf",remove_fixed_tree_joints=false)
-    end_effector_fn = get_kuka_ee_postition_fun(kuka_tree);
-
-    ctrl_dims, state_dims, dt = 7, 7, 0.25
-    n_timesteps = 20
-    joint_target = @SVector [-0.3902233335085379, 1.7501020413442578, 0.8403277122861033, -0.22924505085794067, 2.8506926562622024, -1.417026666483551, -0.35668663982214976] #far reaching case
-    joint_start = @SVector [-0.7240388673767146, -0.34790398102066433, 2.8303899987665897, -2.54032606205873, 1.3329587647643253, 2.7596249683074614, 0.850582268802067]
-
-    leg_costs = get_legibility_costs(ctrl_dims, state_dims, dt, n_timesteps, OBJECT_SET, joint_start, end_effector_fn);
-    vel_costs = get_jointvel_costs(ctrl_dims, state_dims, n_timesteps);
-
-    tf = (n_timesteps-1)*dt;
-    ctrl_linear = (joint_target - joint_start)/tf;
-    U0 = [ctrl_linear for _ in 1:(n_timesteps-1)];
-
-    cons = TO.ConstraintList(ctrl_dims, state_dims, n_timesteps);
-    add_constraint!(cons, TO.GoalConstraint(joint_target), n_timesteps);
-    add_constraint!(cons, TO.BoundConstraint(ctrl_dims, state_dims, u_min=-10, u_max=10), 1:n_timesteps-1);
-    # cannot constrain final timestep twice
-    add_constraint!(cons, TO.BoundConstraint(ctrl_dims, state_dims, x_min=-2π, x_max=2π), 1:n_timesteps-1);
-    # add table constraints
-    add_constraint!(cons, PosEECons(ctrl_dims, ctrl_dims, SA_F64[-100, -100, 0], SA_F64[100,100,100], x -> kuka_full_fk(x, kuka_tree)), 2:n_timesteps-1);
-
-    opts = SolverOptions(
-        penalty_scaling=10.,
-        active_set_tolerance_pn=0.01,
-        # verbose_pn=true,
-        iterations_inner=60,
-        iterations_outer=15,
-        penalty_initial=0.1,
-        verbose=1
-    )
-
-    while true
-        println("Enter leg weight")
-        leg_weight = parse(Float64, readline(stdin))
-        println("Enter velocity weight")
-        vel_weight = parse(Float64, readline(stdin))
-        weights = @SVector [leg_weight, vel_weight];
-        final_costs = [CompoundCost([leg_costs[i], vel_costs[i]], leg_costs[i].is_terminal, ctrl_dims, state_dims, weights) for i=1:n_timesteps];
-        obj = TO.Objective(final_costs);
-        prob = TO.Problem(model, obj, joint_target, tf, x0=joint_start, constraints=cons);
-        initial_controls!(prob, U0);
-
-        solver = ALTROSolver(prob, opts);
-        solve!(solver);
-        println(TO.states(solver))
-        println("Reaches goal: ", sq_norm(joint_target - TO.states(solver)[end]) < 0.01)
-        confirm_display_traj(solver, dt)
-    end
-end
-
-function main()
-    model = Kuka(0)
-    # size(model)
-
-    kuka_tree = parse_urdf("kuka.urdf",remove_fixed_tree_joints=false)
-    end_effector_fn = get_kuka_ee_postition_fun(kuka_tree);
-    jacobian_fn = get_kuka_jacobian_fun(kuka_tree);
-    # should be about [0, 0, 1.306]
-    joint_target = @SVector [-0.3902233335085379, 1.7501020413442578, 0.8403277122861033, -0.22924505085794067, 2.8506926562622024, -1.417026666483551, -0.35668663982214976] #far reaching case
-    # @show kuka_full_fk([0, 0, 0, 0, 0, 0, 0], kuka_tree)
-    @show kuka_full_fk(joint_target, kuka_tree);
-    ctrl_dims = 7;
-    state_dims = 7;
-    dt = 0.25;
-    n_timesteps = 20;
-    N_HUMAN_JOINTS = 11;
-    
-    # read in human trajectory means
-    means_reader = CSV.File("means.csv");
-    human_traj = zeros(3,N_HUMAN_JOINTS,n_timesteps)
-    head_traj = zeros(3, n_timesteps)
-    curr_timestep = 1;
-    head_symbols = CSV.Symbol.(["headx", "heady", "headz"])
-    for row in means_reader
-        i = 1;
-        while i < N_HUMAN_JOINTS
-            human_traj[:,i,curr_timestep] .= [row[3*(i-1) + x] for x=1:3];
-            i += 1;
-        end
-        head_traj[:,curr_timestep] = [row[s] for s in head_symbols];
-
-        curr_timestep += 1;
-    end
-    human_traj = SArray{Tuple{3,N_HUMAN_JOINTS,n_timesteps}}(human_traj);
-    head_traj = SArray{Tuple{3,n_timesteps}}(head_traj);
-
-    # read in human trajectory vars
-    vars_reader = CSV.File("vars.csv", header=false);
-    human_vars_traj = zeros(3,3,N_HUMAN_JOINTS,n_timesteps);
-    curr_timestep = 1;
-    for row in vars_reader
-        for curr_joint = 1:N_HUMAN_JOINTS
-            for matr_row = 1:3
-                idx_start = (curr_joint-1)*9 + (matr_row-1)*3
-                human_vars_traj[matr_row,:,curr_joint,curr_timestep] = [row[idx_start+i] for i=1:3];
-            end
-        end
-        curr_timestep += 1
-    end
-
-    human_vars_traj = SArray{Tuple{3,3,N_HUMAN_JOINTS,n_timesteps}}(human_vars_traj);
-
-    joint_start = @SVector [-0.7240388673767146, -0.34790398102066433, 2.8303899987665897, -2.54032606205873, 1.3329587647643253, 2.7596249683074614, 0.850582268802067]
-    # joint_target = [0.04506347261090404, 1.029660363493563, -0.0563325987175789, -1.8024937659056217, 0.14645022654203643, 0.3406148976556631, -0.12291455548612884] #near reaching case
-    joint_target = @SVector [-0.3902233335085379, 1.7501020413442578, 0.8403277122861033, -0.22924505085794067, 2.8506926562622024, -1.417026666483551, -0.35668663982214976] #far reaching case
-
-    # uncomment these lines to switch to single-timestep trajectories
-    # n_timesteps = 3;
-    # human_traj = human_traj[:,:,[1,10,20]];
-    # human_vars_traj = human_vars_traj[:,:,:,[1,10,20]];
-    # head_traj = head_traj[:,[1,10,20]];
-    # dt = 2.5;
-
-    nom_traj = get_nominal_traj(joint_start, joint_target, n_timesteps);
-
-    leg_costs = get_legibility_costs(ctrl_dims, state_dims, dt, n_timesteps, OBJECT_SET, joint_start, end_effector_fn);
-    vis_costs = get_visibility_costs(ctrl_dims, state_dims, head_traj, OBJECT_POS, end_effector_fn);
-    dist_costs = get_distance_costs(ctrl_dims, state_dims, human_traj, human_vars_traj, x -> kuka_full_fk(x, kuka_tree));
-    nom_costs = get_nominal_costs(ctrl_dims, state_dims, nom_traj, end_effector_fn);
-    vel_costs = get_jointvel_costs(ctrl_dims, state_dims, n_timesteps);
-    weights = @SVector [2., 0.0015, 2., 0.1, 0.1];
-    final_costs = [CompoundCost([leg_costs[i], vis_costs[i], dist_costs[i], nom_costs[i], vel_costs[i]], leg_costs[i].is_terminal, ctrl_dims, state_dims, weights) for i=1:n_timesteps];
-
-
-    tf = (n_timesteps-1)*dt;
-    obj = TO.Objective(final_costs);
-    ctrl_linear = (joint_target - joint_start)/tf;
-    U0 = [ctrl_linear for _ in 1:(n_timesteps-1)];
-
-    cons = TO.ConstraintList(ctrl_dims, state_dims, n_timesteps);
-    add_constraint!(cons, TO.GoalConstraint(joint_target), n_timesteps);
-    add_constraint!(cons, TO.BoundConstraint(ctrl_dims, state_dims, u_min=-10, u_max=10), 1:n_timesteps-1);
-    # cannot constrain final timestep twice
-    add_constraint!(cons, TO.BoundConstraint(ctrl_dims, state_dims, x_min=-2π, x_max=2π), 1:n_timesteps-1);
-    prob = TO.Problem(model, obj, joint_target, tf, x0=joint_start, constraints=cons);
-    initial_controls!(prob, U0);
-
-    println("Beginning to attempt solution");
-    # rollout!(prob);
-
-    opts = SolverOptions(
-        penalty_scaling=10.,
-        active_set_tolerance_pn=0.01,
-        verbose_pn=true,
-        iterations_inner=60,
-        iterations_outer=15,
-        penalty_initial=0.1,
-        verbose=1,
-    )
-
-    solver = ALTROSolver(prob, opts);
-    solve!(solver)
-    println("Cost: ", cost(solver))
-    println("States: ", TO.states(solver))
-    println("Controls: ", TO.controls(solver))
-    println("Violated joint constraints: ", any(x->any(y->y<-2π||y>2π, x), TO.states(solver)))
-    println("Violated control constraints: ", any(x->any(y->y<-5||y>5, x), TO.controls(solver)))
-    println("Reaches goal: ", sq_norm(joint_target - TO.states(solver)[end]) < 0.01)
-
-    for _ = 1:10
-        t_start = Dates.now()
-        newsolver = ALTROSolver(prob, opts);
-        solve!(newsolver)
-        println("Time to solve: ", Dates.now() - t_start)
-        println(TO.states(newsolver))
-    end
-end
-
-# main()
-test_pure_legibility()
