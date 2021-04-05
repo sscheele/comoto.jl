@@ -76,9 +76,8 @@ end
 
 function TO.stage_cost(cost::GeneralCost, x::AbstractVector, u::AbstractVector)
     @assert !cost.is_terminal
-    cost.cost_fn(x, u)
+    cost.cost_fn(x, u)::Real
 end
-
 
 """
     gradient!(E::QuadraticCostFunction, costfun::CostFunction, x, u)
@@ -146,8 +145,8 @@ function CompoundCost(cost_list::AbstractVector{<:TO.CostFunction}, is_terminal:
     end
 end
 
-function sq_norm(x::AbstractVector)
-    dot(x, x)
+function sq_norm(x::AbstractVector{T}) where T
+    dot(x, x)::T
 end
 
 """
@@ -167,9 +166,10 @@ function legibility_costfn(x::AbstractVector, u::AbstractVector, dt::Float64, cu
     cart_x = ee_fn(x);
     n_goals = size(goalset)[2];
     # create matrices that we can subtract from goalset
-    start_rep, x_rep = repeat(start, outer=[1,n_goals]), repeat(cart_x, outer=[1,n_goals])
-    start_goal_velset = (goalset - start_rep)/(dt * total_timesteps);
-    nom_goal_velset = (goalset - x_rep)/(dt * (total_timesteps - curr_timestep));
+    n_dims = length(start)
+    start_rep, x_rep = reshape(start, (n_dims, 1)), reshape(cart_x, (n_dims, 1))
+    start_goal_velset = (goalset .- start_rep)/(dt * total_timesteps);
+    nom_goal_velset = (goalset .- x_rep)/(dt * (total_timesteps - curr_timestep));
 
     goal_weight = exp(-sq_norm(nom_goal_velset[:,1]) + sq_norm(start_goal_velset[:,1]));
     total_weight = goal_weight;
@@ -198,7 +198,7 @@ function get_legibility_costs(info::ComotoProblemInfo)
     for i = 0:(info.n_timesteps - 2)
         append!(ret_val, [GeneralCost{n,m}((x, u) -> legibility_costfn(x, u, info.dt, i, info.n_timesteps, info.goal_set, cart_start, info.eef_fk), false)]);
     end
-    append!(ret_val, [GeneralCost{n,m}(x -> 0, true)]);
+    append!(ret_val, [GeneralCost{n,m}(x -> 0., true)]);
     ret_val
 end
 
@@ -215,7 +215,7 @@ function get_jointvel_costs(info::ComotoProblemInfo)
     for i = 0:(info.n_timesteps - 2)
         append!(ret_val, [GeneralCost{n,m}((x, u) -> jointvel_costfn(u), false)]);
     end
-    append!(ret_val, [GeneralCost{n,m}(x -> 0, true)]);
+    append!(ret_val, [GeneralCost{n,m}(x -> 0., true)]);
     ret_val
 end
 

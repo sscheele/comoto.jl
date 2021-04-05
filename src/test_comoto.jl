@@ -44,13 +44,6 @@ function main()
     println("Violated joint constraints: ", any(x->any(y->y<-2π||y>2π, x), TO.states(solver)))
     println("Violated control constraints: ", any(x->any(y->y<-5||y>5, x), TO.controls(solver)))
     println("Reaches goal: ", sq_norm(joint_target - TO.states(solver)[end]) < 0.01)
-
-    for _ = 1:10
-        t_start = Dates.now()
-        newsolver = ALTROSolver(prob, opts);
-        solve!(newsolver)
-        println("Time to solve: ", Dates.now() - t_start)
-    end
 end
 
 main()
