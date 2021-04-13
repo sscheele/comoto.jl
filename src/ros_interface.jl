@@ -10,6 +10,10 @@ function dispatch_trajectory(traj::AbstractMatrix, dt::Float64, t_0::Float64=0.)
     run(`python ros_dispatch.py traj.txt`);
 end
 
+function dispatch_human_trajectory(human_trajfile::String, dt::Float64)
+    run(`python exec_human_traj.py $human_trajfile $dt`)
+end
+
 function move_to(position::AbstractVector, duration::Float64)
     dispatch_trajectory(repeat(position, outer=[1,1]), 0., duration);
 end

@@ -1,7 +1,7 @@
 import CSV;
 import Dierckx;
 
-function read_human_traj_files(means_filepath::String, vars_filepath::String, n_human_joints::Int=11)
+function read_human_traj_files(means_filepath::String, vars_filepath::String; n_human_joints::Int=11, offset::AbstractArray=[0., 0., 0.])
     # read in human trajectory means
     means_reader = CSV.File(means_filepath);
     n_timesteps = length(means_reader)
@@ -12,7 +12,7 @@ function read_human_traj_files(means_filepath::String, vars_filepath::String, n_
     for row in means_reader
         i = 1;
         while i < n_human_joints
-            human_traj[:,i,curr_timestep] .= [row[3*(i-1) + x] for x=1:3];
+            human_traj[:,i,curr_timestep] .= [row[3*(i-1) + x] + offset[x] for x=1:3];
             i += 1;
         end
         head_traj[:,curr_timestep] = [row[s] for s in head_symbols];

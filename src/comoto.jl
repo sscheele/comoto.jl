@@ -172,18 +172,13 @@ function legibility_costfn(x::AbstractVector, u::AbstractVector, dt::Float64, cu
     nom_goal_velset = (goalset .- x_rep)/(dt * (total_timesteps - curr_timestep));
 
     goal_weight = exp(-sq_norm(nom_goal_velset[:,1]) + sq_norm(start_goal_velset[:,1]));
-    total_weight = goal_weight;
+    total_weight = goal_weight + 0.0001; # add eps for numerical stability
     for i = 2:n_goals
         total_weight += exp(-sq_norm(nom_goal_velset[:,i]) + sq_norm(start_goal_velset[:,i]));
     end
     leg = goal_weight/total_weight    
     if isnan(leg)
         println("NaN in legibility cost");
-        if isa(curr_velnorm, Float64)
-            println(start_goal_velset, nom_goal_velset);
-        else
-            println(start_goal_velset, nom_goal_velset);
-        end
     end
     1-leg
 end
@@ -383,11 +378,19 @@ end
 Convenience function to confirm start, move to trajectory start,
     confirm execution, and execute a trajectory through ROS
 """
-function confirm_display_traj(solver::ALTROSolver, dt::Float64)
+function confirm_display_traj(solver::ALTROSolver, total_time::Float64, human_trajfile::String="")
+    # TODO: change this and exec_human_traj.py to use total time (to avoid different dt's)
     println("Ready to move to start?")
     readline(stdin)
     move_to(TO.states(solver)[1], 4.0)
     println("Ready to dispatch?")
     readline(stdin)
-    dispatch_trajectory(hcat(TO.states(solver)...), dt, 0.)
+    @sync begin
+        human_dt = total_time/(countlines(human_trajfile)-1);
+        if human_trajfile != ""
+            @async dispatch_human_trajectory(human_trajfile, human_dt);
+        end
+        robot_dt = total_time/(length(TO.states(solver))-1);
+        @async dispatch_trajectory(hcat(TO.states(solver)...), robot_dt, 0.);
+    end
 end
