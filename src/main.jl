@@ -1,19 +1,3 @@
-import Pkg; Pkg.activate("..");
-
-using RobotDynamics, Rotations
-using TrajectoryOptimization
-using StaticArrays, LinearAlgebra
-using RigidBodyDynamics;
-using Altro;
-import ForwardDiff;
-using Dates;
-
-include("ros_interface.jl")
-include("problem_info.jl")
-
-const RBD = RigidBodyDynamics;
-const TO = TrajectoryOptimization;
-
 struct Kuka <: TrajectoryOptimization.AbstractModel
     id::Int32
 end
@@ -60,9 +44,9 @@ function TO.evaluate(cons::PosEECons, x::StaticVector{l, T}) where {l, T}
 end
 
 abstract type GeneralCostFunction{n,m} <: TO.CostFunction end
-is_blockdiag(::GeneralCostFunction) = false
-state_dim(::GeneralCostFunction{n}) where n = n
-control_dim(::GeneralCostFunction{<:Any,m}) where m = m
+TO.is_blockdiag(::GeneralCostFunction) = false
+TO.state_dim(::GeneralCostFunction{n}) where n = n
+TO.control_dim(::GeneralCostFunction{<:Any,m}) where m = m
 
 mutable struct GeneralCost{n,m} <: GeneralCostFunction{n,m}
     cost_fn::Function

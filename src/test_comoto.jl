@@ -1,4 +1,4 @@
-include("comoto.jl")
+include("Comoto.jl")
 
 const OBJECT_SET = SArray{Tuple{3,2}}(reshape([0.752,-0.19,0.089, 0.752, 0.09, -0.089], (3,2)));
 const OBJECT_POS = OBJECT_SET[:,1];

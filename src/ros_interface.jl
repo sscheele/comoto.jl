@@ -1,3 +1,6 @@
+const dispatch_script = joinpath(dirname(pathof(Comoto)), "ros_dispatch.py");
+const human_traj_script = joinpath(dirname(pathof(Comoto)), "exec_human_traj.py");
+
 function dispatch_trajectory(traj::AbstractMatrix, dt::Float64, t_0::Float64=0.)
     touch("traj.txt")
     n_points = size(traj)[2]
@@ -7,11 +10,11 @@ function dispatch_trajectory(traj::AbstractMatrix, dt::Float64, t_0::Float64=0.)
         end
         write(file, string(dt)*", "*string(t_0))
     end
-    run(`python ros_dispatch.py traj.txt`);
+    run(`python $dispatch_script traj.txt`);
 end
 
 function dispatch_human_trajectory(human_trajfile::String, dt::Float64)
-    run(`python exec_human_traj.py $human_trajfile $dt`)
+    run(`python $human_traj_script $human_trajfile $dt`)
 end
 
 function move_to(position::AbstractVector, duration::Float64)

@@ -1,4 +1,4 @@
-name = "comoto"
+name = "Comoto"
 uuid = "74145abb-c75d-491a-a0a0-1cb41e15d0aa"
 authors = ["Sam <scheele@gatech.edu>"]
 version = "0.1.0"
@@ -6,8 +6,10 @@ version = "0.1.0"
 [deps]
 Altro = "5dcf52e5-e2fb-48e0-b826-96f46d2e3e73"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 Dierckx = "39dd38d3-220a-591b-8e3c-4c3a8c710a94"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 RigidBodyDynamics = "366cf18f-59d5-5db9-a4de-86a9f6786172"
 RobotDynamics = "38ceca67-d8d3-44e8-9852-78a5596522e1"
 Rotations = "6038ab10-8711-5258-84ad-4b1120ba62dc"

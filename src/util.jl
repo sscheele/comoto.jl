@@ -1,6 +1,3 @@
-import CSV;
-import Dierckx;
-
 function read_human_traj_files(means_filepath::String, vars_filepath::String; n_human_joints::Int=11, offset::AbstractArray=[0., 0., 0.])
     # read in human trajectory means
     means_reader = CSV.File(means_filepath);

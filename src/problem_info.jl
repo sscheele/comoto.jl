@@ -1,8 +1,3 @@
-using RigidBodyDynamics;
-using LinearAlgebra;
-
-include("util.jl")
-
 struct ComotoProblemInfo
     joint_tree::RigidBodyDynamics.Mechanism
     eef_fk::Function
@@ -82,8 +77,12 @@ function get_kuka_ee_postition_fun(kuka::Mechanism,statecache=StateCache(kuka))
     end
 end
 
-function get_kuka_probinfo(params::ComotoParameters, urdf_filepath::String="kuka.urdf", 
+function get_kuka_probinfo(params::ComotoParameters, urdf_filepath::String="", 
     means_filepath::String="means.csv", vars_filepath::String="vars.csv")
+
+    if urdf_filepath == ""
+        urdf_filepath = joinpath(dirname(pathof(Comoto)), "res", "kuka.urdf")
+    end
     
     kuka_tree = parse_urdf(urdf_filepath, remove_fixed_tree_joints=false)
     cache = StateCache(kuka_tree)
