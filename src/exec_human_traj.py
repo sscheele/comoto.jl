@@ -1,11 +1,10 @@
 from human_traj_display.srv import ExecuteHumanTraj
 from geometry_msgs.msg import Point
+from visualization_msgs.msg import Marker
 
 import csv
 import sys
 import rospy
-
-rospy.init_node("human_traj_dispatch")
 
 def parse_human_traj_file(fname):
     tsteps = []
@@ -41,12 +40,26 @@ def transform_jointarr(arr):
     in_frame(arr, 6, 4) # torso to neck 
     in_frame(arr, 4, 0) # neck to R shoulder
 
+def vis_traj_pts(arr, dt):
+    m = Marker()
+    m.header.frame_id = "world"
+    m.type = Marker.LINE_STRIP
+    m.pose.orientation.w = 1
+    m.scale.x = 0.01  # controls line width
+    m.color.g, m.color.a = 1.0, 1.0
+    # m.lifetime.secs = 60 
+    m.points = arr
+    pub = rospy.Publisher("/visualization_marker", Marker, queue_size=1, latch=True)
+    pub.publish(m)    
+
 def visualize_human_trajectory(fname, human_timestep_size):
     arr_by_timestep = parse_human_traj_file(fname)
     n_human_timesteps = len(arr_by_timestep)
 
     n_human_joints = len(arr_by_timestep[0])
     arr_T = [[x[i] for x in arr_by_timestep] for i in range(n_human_joints)]
+
+    vis_traj_pts(arr_T[3], human_timestep_size)
 
     transform_jointarr(arr_T)
 
@@ -58,6 +71,9 @@ def visualize_human_trajectory(fname, human_timestep_size):
     except rospy.ServiceException, e:
         print "Service call failed: %s"%e
 
-dt = float(sys.argv[2])
-visualize_human_trajectory(sys.argv[1], dt)
-rospy.signal_shutdown("Sending human trajectory complete")
+if __name__ == "__main__":
+    rospy.init_node("human_traj_dispatch")
+    dt = float(sys.argv[2])
+    visualize_human_trajectory(sys.argv[1], dt)
+    rospy.signal_shutdown("Sending human trajectory complete")
+

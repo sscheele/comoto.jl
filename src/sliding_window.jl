@@ -1,4 +1,5 @@
 include("comoto.jl")
+using Revise;
 
 const OBJECT_SET = SArray{Tuple{3,2}}(reshape([0.752,-0.19,0.089, 0.752, 0.09, -0.089], (3,2)));
 const OBJECT_POS = OBJECT_SET[:,1];
@@ -25,6 +26,7 @@ function main()
     base_prob_info = get_kuka_probinfo(params)
 
     weights = @SVector [2., 1.5, 2., 7., 0.1];
+    sliding_weights = @SVector [2., 1.5, 2., 7., 0.1, 1.];
 
     opts = SolverOptions(
         penalty_scaling=10.,
@@ -58,7 +60,7 @@ function main()
             joint_target,
             base_prob_info.nominal_traj[:,i:i+RESAMPLE_HORIZON]
         )
-        prob = get_partial_comoto(model, subprob_info, weights);
+        prob = get_partial_comoto(model, subprob_info, sliding_weights);
         
         solver = ALTROSolver(prob, opts);
         solve!(solver)
@@ -103,7 +105,7 @@ function main()
 end
 
 function get_partial_comoto(model::TO.AbstractModel, info::ComotoProblemInfo, weights::AbstractVector)
-    final_costs = get_comoto_costs(info, weights)
+    final_costs = get_sliding_costs(info, weights)
     n_timesteps = info.n_timesteps
     tf = (n_timesteps-1)*info.dt;
     obj = TO.Objective(final_costs);
@@ -138,4 +140,8 @@ function confirm_display_traj(solved_traj::AbstractArray, total_time::Float64, h
     end
 end
 
-main()
+while true
+    print("Enter to begin")
+    readline(stdin)
+    main()
+end

@@ -10,6 +10,28 @@ function dispatch_trajectory(traj::AbstractMatrix, dt::Float64, t_0::Float64=0.)
     run(`python ros_dispatch.py traj.txt`);
 end
 
+function dispatch_trajectory(traj::AbstractMatrix, eef_traj::AbstractMatrix, palm_traj_pred::AbstractMatrix, dt::Float64, t_0::Float64=0.)
+    touch("traj.txt")
+    n_points = size(traj)[2]
+    open("traj.txt", "w") do file
+        for i = 1:n_points
+            write(file, string(traj[:,i])[2:end-1]*"\n");
+        end
+        write(file, string(dt)*", "*string(t_0))
+    end
+    open("eef-cart-traj.txt", "w") do file
+        for i = 1:n_points
+            write(file, string(eef_traj[:,i])[2:end-1]*"\n");
+        end
+    end
+    open("palm-cart-traj.txt", "w") do file
+        for i = 1:n_points
+            write(file, string(palm_traj_pred[:,i])[2:end-1]*"\n");
+        end
+    end
+    run(`python ros_dispatch.py traj.txt eef-cart-traj.txt palm-cart-traj.txt`);
+end
+
 function dispatch_human_trajectory(human_trajfile::String, dt::Float64)
     run(`python exec_human_traj.py $human_trajfile $dt`)
 end

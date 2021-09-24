@@ -3,6 +3,7 @@ using LinearAlgebra;
 
 include("util.jl")
 
+"ComotoProblemInfo contains all neccessary information to compute all comoto costs"
 struct ComotoProblemInfo
     joint_tree::RigidBodyDynamics.Mechanism
     eef_fk::Function
@@ -21,6 +22,7 @@ struct ComotoProblemInfo
     nominal_traj::AbstractMatrix
 end
 
+"ComotoParameters are the user-defined paramters for a comoto problem"
 mutable struct ComotoParameters
     joint_start::AbstractVector
     joint_target::AbstractVector
@@ -28,11 +30,6 @@ mutable struct ComotoParameters
     dt::Float64
     goal_set::AbstractMatrix
 end
-
-# struct KukaFKCacheLine
-#     full_pos::AbstractMatrix
-#     eef_pos::AbstractVector
-# end
 
 function get_kuka_joint(kuka::Mechanism, jointname::String)
     ee_body = findbody(kuka, jointname)

@@ -142,6 +142,17 @@ function CompoundCost(cost_list::AbstractVector{<:TO.CostFunction}, is_terminal:
         return GeneralCost{n,m}(x -> dot([TO.stage_cost(c, x) for c in cost_list], weights), is_terminal)
     else
         return GeneralCost{n,m}((x, u) -> dot([TO.stage_cost(c, x, u) for c in cost_list], weights), is_terminal)
+        # return GeneralCost{n,m}(function (x, u)
+        #     tmp = ["leg", "vis","dist","nom","vel"];
+        #     total = 0.;
+        #     for i = 1:length(cost_list)
+        #         curr = weights[i]*TO.stage_cost(cost_list[i], x, u)
+        #         println(tmp[i],": ", curr);
+        #         total += curr;
+        #     end
+        #     println("Total: ", total);
+        #     total
+        # end, is_terminal)
     end
 end
 
@@ -332,6 +343,23 @@ function get_nominal_costs(info::ComotoProblemInfo)
     ret_val
 end
 
+function pose_costfn(cart_eef_pos::AbstractVector, cart_goal::AbstractVector)
+    ret_val = sq_norm(cart_eef_pos .- cart_goal);
+    sqrt(ret_val)
+end
+
+function get_pose_costs(info::ComotoProblemInfo)
+    n, m = info.state_dims, info.ctrl_dims
+    ret_val = GeneralCost{n,m}[];
+    goal_pos = info.eef_fk(info.joint_target);
+
+    for i = 1:(info.n_timesteps - 1)
+        append!(ret_val, [GeneralCost{n,m}((x, u) -> pose_costfn(info.eef_fk(x), goal_pos), false)]);
+    end
+    append!(ret_val, [GeneralCost{n,m}(x->pose_costfn(info.eef_fk(x), goal_pos), true)]);
+    ret_val
+end
+
 """
 Returns a vector of length n_timesteps of comoto costs (combination of legibility,
 visibility, distance, nominal, and joint velocity costs). Costs are weighted
@@ -345,6 +373,22 @@ function get_comoto_costs(info::ComotoProblemInfo, weights::AbstractVector)
     nom_costs = get_nominal_costs(info);
     vel_costs = get_jointvel_costs(info);
     return [CompoundCost([leg_costs[i], vis_costs[i], dist_costs[i], nom_costs[i], vel_costs[i]], leg_costs[i].is_terminal, info.ctrl_dims, info.state_dims, weights) for i=1:info.n_timesteps];
+end
+
+"""
+Returns a vector of length n_timesteps of sliding window costs (comoto plus goal). 
+Costs are weighted according to the weights vector:
+Weights: leg, vis, dist, nom, vel, goal
+"""
+function get_sliding_costs(info::ComotoProblemInfo, weights::AbstractVector)
+    leg_costs = get_legibility_costs(info);
+    vis_costs = get_visibility_costs(info);
+    dist_costs = get_distance_costs(info);
+    nom_costs = get_nominal_costs(info);
+    vel_costs = get_jointvel_costs(info);
+    goal_costs = get_pose_costs(info);
+    return [CompoundCost([leg_costs[i], vis_costs[i], dist_costs[i], nom_costs[i], vel_costs[i], goal_costs[i]], 
+        leg_costs[i].is_terminal, info.ctrl_dims, info.state_dims, weights) for i=1:info.n_timesteps];
 end
 
 """

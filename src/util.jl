@@ -56,6 +56,10 @@ function resample_1d_traj(traj::AbstractVector, new_n_timesteps::Int)
 end
 
 function resample_human_traj(traj::AbstractArray, new_n_timesteps::Int)
+    """
+    Splines together a trajectory, then samples it at `new_n_timesteps`
+    equally spaced intervals
+    """
     @assert new_n_timesteps > 2
     traj_dims = collect(size(traj))
     if length(traj_dims) == 1
