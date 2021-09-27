@@ -14,14 +14,14 @@ include("problem_info.jl")
 const RBD = RigidBodyDynamics;
 const TO = TrajectoryOptimization;
 
-struct Kuka <: TrajectoryOptimization.AbstractModel
+struct VelCtrl_7dof <: TrajectoryOptimization.AbstractModel
     id::Int32
 end
 
-RobotDynamics.control_dim(::Kuka) = 7
-RobotDynamics.state_dim(::Kuka) = 7
+RobotDynamics.control_dim(::VelCtrl_7dof) = 7
+RobotDynamics.state_dim(::VelCtrl_7dof) = 7
 
-function RobotDynamics.dynamics(model::Kuka, x, u)
+function RobotDynamics.dynamics(model::VelCtrl_7dof, x, u)
     u
 end
 
@@ -100,7 +100,7 @@ function TO.gradient!(E::TO.QuadraticCostFunction, cost::GeneralCostFunction, x:
     E.q .= ForwardDiff.gradient(state_lambda, x)
     E.r .= ForwardDiff.gradient(ctrl_lambda, u)
     if isnan(sum(E.q) + sum(E.r))
-        println("It's a nan!")
+        println("NaN in gradient computation")
     end
     return false
 end
