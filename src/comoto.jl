@@ -71,6 +71,7 @@ end
 
 function TO.stage_cost(cost::GeneralCost, x::AbstractVector)
     @assert cost.is_terminal
+    # println(cost.cost_fn(x))
     cost.cost_fn(x)
 end
 
@@ -141,6 +142,7 @@ function CompoundCost(cost_list::AbstractVector{<:TO.CostFunction}, is_terminal:
     if is_terminal
         return GeneralCost{n,m}(x -> dot([TO.stage_cost(c, x) for c in cost_list], weights), is_terminal)
     else
+        # println((x, u) -> dot([TO.stage_cost(c, x, u) for c in cost_list], weights))
         return GeneralCost{n,m}((x, u) -> dot([TO.stage_cost(c, x, u) for c in cost_list], weights), is_terminal)
     end
 end
@@ -239,9 +241,9 @@ function get_visibility_costs(info::ComotoProblemInfo)
     n, m = info.state_dims, info.ctrl_dims
     ret_val = GeneralCost{n,m}[];
     for i = 1:(info.n_timesteps - 1)
-        append!(ret_val, [GeneralCost{n,m}((x, u) -> visibility_costfn(info.eef_fk(x), info.object_pos, info.head_traj[:,i]), false)]);
+        append!(ret_val, [GeneralCost{n,m}((x, u) -> visibility_costfn(info.eef_fk(x), info.human_goal, info.head_traj[:,i]), false)]);
     end
-    append!(ret_val, [GeneralCost{n,m}(x -> visibility_costfn(info.eef_fk(x), info.object_pos, info.head_traj[:,end]), true)]);
+    append!(ret_val, [GeneralCost{n,m}(x -> visibility_costfn(info.eef_fk(x), info.human_goal, info.head_traj[:,end]), true)]);
     ret_val
 end
 
@@ -271,18 +273,25 @@ human_vars: 3x3xN_HUMAN_JOINTS array of human joint covariance matrices
 function distance_costfn(cart_joints::AbstractArray, human_pos::AbstractArray, human_vars::AbstractArray)
     n_robot_joints = size(cart_joints)[2]
     n_human_joints = size(human_pos)[2]
+
+    # right_shoulder,right_elbow,right_wrist,right_palm,neck,head,torso,left_shoulder,left_elbow,left_wrist,left_palm
+    weights = [1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.]
     
     cost_total = 0.0;
-    for rjoint_idx = 1:n_robot_joints
-        for hjoint_idx = 1:n_human_joints
+    for hjoint_idx = 1:n_human_joints
+        for rjoint_idx = 1:n_robot_joints
             diff = abs.(cart_joints[:,rjoint_idx] - human_pos[:,hjoint_idx]);
             curr_cost_inv = diff'*inv(human_vars[:,:,hjoint_idx])*diff;
-            cost_total += 1/curr_cost_inv;
+            cost_total += weights[hjoint_idx]/curr_cost_inv;
         end
     end
     if isnan(cost_total)
         println("NaN in distance cost");
     end
+    # open("distance.txt", "w") do file
+    #     write(file, string(cost_total))
+    #     write(file, ",\n")
+    # end
     return cost_total;
 end
 
@@ -367,7 +376,7 @@ function get_comoto_problem(model::TO.AbstractModel, info::ComotoProblemInfo, we
     add_constraint!(cons, TO.BoundConstraint(info.ctrl_dims, info.state_dims, u_min=-10, u_max=10), 1:n_timesteps-1);
     # cannot constrain final timestep twice
     add_constraint!(cons, TO.BoundConstraint(info.ctrl_dims, info.state_dims, x_min=-2π, x_max=2π), 1:n_timesteps-1);
-    add_constraint!(cons, PosEECons(info.ctrl_dims, info.ctrl_dims, SA_F64[-100, -100, 0], SA_F64[100,100,100], info.full_fk), 2:n_timesteps-1);
+    add_constraint!(cons, PosEECons(info.ctrl_dims, info.ctrl_dims, SA_F64[-100, -100, 0.2], SA_F64[100,100,100], info.full_fk), 2:n_timesteps-1);
 
     prob = TO.Problem(model, obj, info.joint_target, tf, x0=info.joint_start, constraints=cons);
     initial_controls!(prob, U0);
@@ -378,19 +387,19 @@ end
 Convenience function to confirm start, move to trajectory start,
     confirm execution, and execute a trajectory through ROS
 """
-function confirm_display_traj(solver::ALTROSolver, total_time::Float64, human_trajfile::String="")
+function confirm_display_traj(traj::AbstractArray, robot_name::String, total_time::Float64, human_trajfile::String="")
     # TODO: change this and exec_human_traj.py to use total time (to avoid different dt's)
     println("Ready to move to start?")
     readline(stdin)
-    move_to(TO.states(solver)[1], 4.0)
+    move_to(traj[1], 4.0, robot_name)
     println("Ready to dispatch?")
     readline(stdin)
     @sync begin
-        human_dt = total_time/(countlines(human_trajfile)-1);
+        human_dt = total_time/(200);
         if human_trajfile != ""
             @async dispatch_human_trajectory(human_trajfile, human_dt);
         end
-        robot_dt = total_time/(length(TO.states(solver))-1);
-        @async dispatch_trajectory(hcat(TO.states(solver)...), robot_dt, 0.);
+        robot_dt = total_time/(length(traj)-1);
+        @async dispatch_trajectory(hcat(traj...), robot_dt, 0., robot_name);
     end
 end

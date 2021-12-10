@@ -1,20 +1,30 @@
 include("comoto_jaco.jl")
 
-const OBJECT_SET = SArray{Tuple{3,2}}(reshape([0.752,-0.19,0.089, 0.752, 0.09, -0.089], (3,2)));
+const OBJECT_SET = SArray{Tuple{3,2}}(reshape([-0.07, -0.41, 0, -0.34, -0.70, 0], (3,2)));
 const OBJECT_POS = OBJECT_SET[:,1];
 
 function main(urdf_filepath::String="jaco_urdf.urdf")
     model = VelCtrl_7dof(0)
 
-    joint_start = @SVector [-0.7240388673767146, -0.34790398102066433, 2.8303899987665897, -2.54032606205873, 1.3329587647643253, 2.7596249683074614, 0.850582268802067]
-    # join_pos =  @SVector  [2.5203525710892904e-06, -5.114979239362327e-05, 2.9007499149151625, 0.00023988308964195681, 1.2973341908758345, -2.0768131629122526, 1.4003935456135341, 8.866465064372164e-07]
-    # joint_pos_1 = @SVector [-1.38, 3.14, -0.44, 1.88, -1.01, 1.4, 0.63]
-    # joint_pos_2 = @SVector [-0.69, 3.65, -0.94, 2.57, -0.25, 3.62, 0.63]
-    # joint_pos_3 = @SVector [-2.51, 1.7, 0.25, 2.15, -0.57, 2.22, 0.63]
-    joint_target = @SVector [-1.38, 3.14, -0.44, 1.88, -1.01, 1.4, 0.63];
-    # # joint_target = [0.04506347261090404, 1.029660363493563, -0.0563325987175789, -1.8024937659056217, 0.14645022654203643, 0.3406148976556631, -0.12291455548612884] #near reaching case
-    # joint_target = @SVector [-0.3902233335085379, 1.7501020413442578, 0.8403277122861033, -0.22924505085794067, 2.8506926562622024, -1.417026666483551, -0.35668663982214976] #far reaching case
+    # joint_start = @SVector [4.93928, 2.8396507, 6.28319, 0.76043996, 4.628979695, 4.494728969, 5.028974253]
+    #joint_start = @SVector [3.298604109345377, 3.9015456443520793, 6.929810939862968, 0.9327826247075317, 3.1043060014837027, 4.336929872002593, 5.031395198927613]
+    # joint_target = @SVector [5.046514812, 4.111088146,6.819123561, 0.9933942863, 4.413815505, 4.151859038, 5.491224706];
+    #joint_start = @SVector [1.0707005470277922, 2.1676239097290497, 2.8747500376343607, 1.7463839969440553, 4.236838690857491, 2.63071926062822, 4.499131562406633];
     
+    # Fixed joint starts
+    # Home
+    #joint_start = @SVector [1.7994737138006214, 3.4414297049224354, 3.1433806999456726, 0.7578406379646626, 4.634932537976389, 4.492826794841979, 5.0256560867784925];
+    # Left
+    #joint_start = @SVector [6.275706085574208, 3.5177979797093295, 6.284589858338494, 1.2498775591151325, 4.631694666723071, 4.492623861966915, 5.031556586489672];
+    # Right
+    joint_start = @SVector [1.0707005470277922, 2.1676239097290497, 2.8747500376343607, 1.7463839969440553, 4.236838690857491, 2.63071926062822, 4.499131562406633];
+    #joint_start = @SVector [3.298604109345377, 3.9015456443520793, 6.929810939862968, 0.9327826247075317, 3.1043060014837027, 4.336929872002593, 5.031395198927613]; #from right side
+    
+    
+    # Sampled joint targets
+    # joint_target = @SVector [2.557013614299187, 2.344602815231666, 2.917716679713372, 1.2569398628518593, 4.908725738060819, 3.0464895731664097, 4.876310806536811];
+    # joint_target = @SVector [2.1725037529524562, 2.1544880008102885, 3.2597142342630585, 1.6655121835957825, 4.778336838458322, 3.1676186616587017, 5.014504366029895];
+    joint_target = @SVector [2.0466712556589757, 1.9449580762519607, 2.9728821974816, 2.0044336539283734, 4.761461451894926, 2.975863073689726, 5.005376115077539];
     n_timesteps = 20;
     dt = 0.25;
 
@@ -25,12 +35,41 @@ function main(urdf_filepath::String="jaco_urdf.urdf")
         dt,
         OBJECT_SET
     )
-    prob_info = get_jaco_probinfo(params)
+    prob_info = get_jaco_probinfo(params, "jaco_urdf.urdf", "human_traj_data/means_3.csv", "human_traj_data/vars_ol.csv")
+    end_effector_fn = get_jaco_ee_function("jaco_urdf.urdf")
     
-    weights = @SVector [2., 0.0015, 2., 0.1, 0.1];
+    # weights = @SVector [0., 0, 0, 1, 0];
+    # prob = get_comoto_problem(model, prob_info, weights)
+
+    # println("Beginning to attempt vanilla solution");
+
+    # opts = SolverOptions(
+    #     penalty_scaling=10.,
+    #     active_set_tolerance_pn=0.01,
+    #     verbose_pn=true,
+    #     iterations_inner=60,
+    #     iterations_outer=15,
+    #     penalty_initial=0.1,
+    #     verbose=1,
+    # )
+
+    # # solver = ALTROSolver(prob, opts);
+    # # solve!(solver)
+    # println("Cost: ", cost(solver))
+    # # println("States: ", TO.states(solver))
+    # println("Controls: ", TO.controls(solver))
+    # println("Violated joint constraints: ", any(x->any(y->y<-2π||y>2π, x), TO.states(solver)))
+    # println("Violated control constraints: ", any(x->any(y->y<-10||y>10, x), TO.controls(solver)))
+    # println("Reaches goal: ", sq_norm(joint_target - TO.states(solver)[end]) < 0.01)
+
+
+    # confirm_display_traj(solver, "JACO", dt*(n_timesteps - 1), "human_traj_data/means.csv")
+    
+    weights = @SVector [1., 0.0015, 5., 0.1, 0.1];
     prob = get_comoto_problem(model, prob_info, weights)
 
-    println("Beginning to attempt solution");
+    println("Beginning to attempt real solution");
+    #move_to(joint_start, 4.0, "JACO")
 
     opts = SolverOptions(
         penalty_scaling=10.,
@@ -43,6 +82,14 @@ function main(urdf_filepath::String="jaco_urdf.urdf")
     )
 
     solver = ALTROSolver(prob, opts);
+    nominal_trajectory = [SVector{7}(prob_info.nominal_traj[:,t]) for t=1:n_timesteps]
+    touch("traj_nominal.txt")
+    open("traj_nominal.txt", "w") do file
+        for angular in nominal_trajectory
+            write(file, string(end_effector_fn(angular)))
+            write(file, ",\n")
+        end
+    end
     solve!(solver)
     println("Cost: ", cost(solver))
     # println("States: ", TO.states(solver))
@@ -50,8 +97,11 @@ function main(urdf_filepath::String="jaco_urdf.urdf")
     println("Violated joint constraints: ", any(x->any(y->y<-2π||y>2π, x), TO.states(solver)))
     println("Violated control constraints: ", any(x->any(y->y<-10||y>10, x), TO.controls(solver)))
     println("Reaches goal: ", sq_norm(joint_target - TO.states(solver)[end]) < 0.01)
-
-    # confirm_display_traj(solver, dt*(n_timesteps - 1), "means.csv")
+    
+    # println("Executing Nominal Trajectory")
+    # confirm_display_traj([SVector{7}(prob_info.nominal_traj[:,t]) for t=1:n_timesteps], "JACO", dt*(n_timesteps - 1), "human_traj_data/means.csv")
+    println("Executing CoMOTO Trajectory")
+    confirm_display_traj(TO.states(solver), "JACO", dt*(n_timesteps - 1), "human_traj_data/means_3.csv")
 end
 
 main()

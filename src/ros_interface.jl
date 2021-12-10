@@ -1,4 +1,4 @@
-function dispatch_trajectory(traj::AbstractMatrix, dt::Float64, t_0::Float64=0.)
+function dispatch_trajectory(traj::AbstractMatrix, dt::Float64, t_0::Float64=0., robot_name::String="IIWA")
     touch("traj.txt")
     n_points = size(traj)[2]
     open("traj.txt", "w") do file
@@ -7,15 +7,15 @@ function dispatch_trajectory(traj::AbstractMatrix, dt::Float64, t_0::Float64=0.)
         end
         write(file, string(dt)*", "*string(t_0))
     end
-    run(`python ros_dispatch.py traj.txt`);
+    run(`python ros_dispatch.py traj.txt $robot_name`);
 end
 
 function dispatch_human_trajectory(human_trajfile::String, dt::Float64)
     run(`python exec_human_traj.py $human_trajfile $dt`)
 end
 
-function move_to(position::AbstractVector, duration::Float64)
-    dispatch_trajectory(repeat(position, outer=[1,1]), 0., duration);
+function move_to(position::AbstractVector, duration::Float64, robot_name::String="IIWA")
+    dispatch_trajectory(repeat(position, outer=[1,1]), 0., duration, robot_name);
 end
 
 function test_dispatch()

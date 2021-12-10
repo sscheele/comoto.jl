@@ -59,5 +59,6 @@ def visualize_human_trajectory(fname, human_timestep_size):
         print "Service call failed: %s"%e
 
 dt = float(sys.argv[2])
+print(dt)
 visualize_human_trajectory(sys.argv[1], dt)
 rospy.signal_shutdown("Sending human trajectory complete")

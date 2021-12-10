@@ -9,6 +9,8 @@ function read_human_traj_files(means_filepath::String, vars_filepath::String; n_
     head_traj = zeros(3, n_timesteps)
     curr_timestep = 1;
     head_symbols = CSV.Symbol.(["headx", "heady", "headz"])
+    goal_symbols = CSV.Symbol.(["right_palmx", "right_palmy", "right_palmz"])
+    human_goal = zeros(3)
     for row in means_reader
         i = 1;
         while i < n_human_joints
@@ -16,11 +18,13 @@ function read_human_traj_files(means_filepath::String, vars_filepath::String; n_
             i += 1;
         end
         head_traj[:,curr_timestep] = [row[s] for s in head_symbols];
+        human_goal = [row[s] for s in goal_symbols];
 
         curr_timestep += 1;
     end
     human_traj = SArray{Tuple{3,n_human_joints,n_timesteps}}(human_traj);
     head_traj = SArray{Tuple{3,n_timesteps}}(head_traj);
+    human_goal = SVector{3}(human_goal)
 
     # read in human trajectory vars
     vars_reader = CSV.File(vars_filepath, header=false);
@@ -36,9 +40,12 @@ function read_human_traj_files(means_filepath::String, vars_filepath::String; n_
         curr_timestep += 1
     end
 
+    println("SIZE")
+    println(size(human_vars_traj))
+
     human_vars_traj = SArray{Tuple{3,3,n_human_joints,n_timesteps}}(human_vars_traj);
 
-    return human_traj, head_traj, human_vars_traj
+    return human_traj, head_traj, human_vars_traj, human_goal
 end
 
 function get_nominal_traj(start::AbstractVector, goal::AbstractVector, n_timesteps::Int)

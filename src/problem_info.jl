@@ -11,6 +11,7 @@ struct ComotoProblemInfo
     dt::Float64
     object_pos::AbstractVector
     goal_set::AbstractMatrix
+    human_goal::AbstractVector
     human_traj::AbstractArray
     head_traj::AbstractArray
     human_vars_traj::AbstractArray

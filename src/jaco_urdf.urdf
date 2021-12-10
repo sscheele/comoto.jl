@@ -367,7 +367,7 @@
   <joint name="j2s7s300_ee_gripper" type="fixed">
     <parent link="j2s7s300_ee_base"/>
     <child link="j2s7s300_ee_link"/>
-    <origin xyz="0.13 0 0"/>
+    <origin xyz="1.5 0 0"/>
   </joint>
   <link name="j2s7s300_ee_link"/>
   <transmission name="j2s7s300_joint_7_trans">

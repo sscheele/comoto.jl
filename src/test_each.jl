@@ -54,7 +54,7 @@ function main()
         solver = ALTROSolver(prob, opts);
         solve!(solver)
 
-        confirm_display_traj(solver, prob_info.dt*(prob_info.n_timesteps - 1), "means.csv");
+        confirm_display_traj(TO.states(solver), prob_info.dt*(prob_info.n_timesteps - 1), "IIWA", "means.csv");
     end
 end
 
