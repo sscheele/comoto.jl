@@ -1,5 +1,3 @@
-import Pkg; Pkg.activate("..");
-
 using RobotDynamics, Rotations
 using TrajectoryOptimization
 using StaticArrays, LinearAlgebra
@@ -9,19 +7,18 @@ import ForwardDiff;
 using Dates;
 
 include("ros_interface.jl")
-include("problem_info.jl")
 
 const RBD = RigidBodyDynamics;
 const TO = TrajectoryOptimization;
 
-struct Kuka <: TrajectoryOptimization.AbstractModel
+struct ManipVelCtrl{n} <: TrajectoryOptimization.AbstractModel
     id::Int32
 end
 
-RobotDynamics.control_dim(::Kuka) = 7
-RobotDynamics.state_dim(::Kuka) = 7
+RobotDynamics.control_dim(::ManipVelCtrl{n}) where n = n
+RobotDynamics.state_dim(::ManipVelCtrl{n}) where n = n
 
-function RobotDynamics.dynamics(model::Kuka, x, u)
+function RobotDynamics.dynamics(model::ManipVelCtrl, x, u)
     u
 end
 
