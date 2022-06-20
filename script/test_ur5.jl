@@ -22,7 +22,6 @@ function main()
     )
     # prob_info = get_kuka_probinfo(params)
     # prob_info = get_jaco_probinfo(params)
-    # TODO: replace joint names with link names
     ur5_info = RobotInfo(
         ["shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link", "wrist_3_link"],
         "ur5.urdf",

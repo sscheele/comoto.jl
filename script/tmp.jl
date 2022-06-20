@@ -1,13 +1,3 @@
-import Pkg; Pkg.activate("..");
-import FiniteDiff;
-include("../src/problem_info.jl")
-
-const OBJECT_SET = SArray{Tuple{3,2}}(reshape([0.752,-0.19,0.089, 0.752, 0.09, -0.089], (3,2)));
-const OBJECT_POS = OBJECT_SET[:,1];
-
-const RESAMPLE_PERIOD = 2;
-const RESAMPLE_HORIZON = 5;
-
 function main(sliding_weights::AbstractVector{Float64})
     model = ManipVelCtrl{7}(0)
 
@@ -34,6 +24,9 @@ function main(sliding_weights::AbstractVector{Float64})
     )
     base_prob_info = get_probinfo(params, kuka_info, "human_trajs/669-means-fmt.csv", 
         "human_trajs/669-vars-fmt.csv")
+
+    
+    println("Hello!")
 
     # todo: cost_tolerance (default: 1e-4), cost_tolerance_intermediate (1e-4)
     opts = SolverOptions(
@@ -117,50 +110,12 @@ function main(sliding_weights::AbstractVector{Float64})
 
     println("Average time: ", t_total/n_iter, " ms")
 
-    confirm_display_traj(actual_traj, dt*(n_timesteps-1), "human_trajs/669-means-fmt.csv")
+    # confirm_display_traj(actual_traj, dt*(n_timesteps-1), "human_trajs/669-means-fmt.csv")
 end
 
-function get_partial_comoto(model::TO.AbstractModel, info::ComotoProblemInfo, weights::AbstractVector, U0::AbstractVector)
-    final_costs = get_sliding_costs(info, weights)
-    n_timesteps = info.n_timesteps
-    tf = (n_timesteps-1)*info.dt;
-    obj = TO.Objective(final_costs);
-    
-
-    cons = TO.ConstraintList(info.ctrl_dims, info.state_dims, n_timesteps);
-    add_constraint!(cons, TO.BoundConstraint(info.ctrl_dims, info.state_dims, u_min=-10, u_max=10), 1:n_timesteps-1);
-    # cannot constrain final timestep twice
-    add_constraint!(cons, TO.BoundConstraint(info.ctrl_dims, info.state_dims, x_min=-2π, x_max=2π), 1:n_timesteps-1);
-    add_constraint!(cons, PosEECons(info.ctrl_dims, info.ctrl_dims, SA_F64[-100, -100, 0], SA_F64[100,100,100], info.full_fk), 2:n_timesteps-1);
-
-    prob = TO.Problem(model, obj, info.joint_start, tf, xf=info.joint_target, constraints=cons);
-    initial_controls!(prob, U0);
-    prob
-end
-
-function confirm_display_traj(solved_traj::AbstractArray, total_time::Float64, human_trajfile::String="")
-    # TODO: change this and exec_human_traj.py to use total time (to avoid different dt's)
-    println("Ready to move to start?")
-    readline(stdin)
-    move_to(solved_traj[1], 4.0)
-    println("Ready to dispatch?")
-    readline(stdin)
-    @sync begin
-        human_dt = total_time/(countlines(human_trajfile)-1);
-        if human_trajfile != ""
-            @async dispatch_human_trajectory(human_trajfile, human_dt);
-        end
-        robot_dt = total_time/(length(solved_traj)-1);
-        @async dispatch_trajectory(hcat(solved_traj...), robot_dt, 0.);
-    end
-end
+# const weights = @SVector [2., 1.5, 2., 6., 0.1,];
+# TODO: nom to 2.0?
 
 const RESAMPLE_HORIZON = 5;
 const sliding_weights = @SVector [2., 1.5, 1.5, 20., 0.1, 1.5];
 main(sliding_weights)
-
-# while true
-#     print("Enter to begin")
-#     readline(stdin)
-#     main()
-# end

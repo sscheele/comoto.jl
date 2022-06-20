@@ -18,7 +18,8 @@ function get_full_fk_fn(info::RobotInfo, robot::Mechanism, cache::StateCache)
         world = root_frame(robot);
         nn = num_positions(robot);
 
-        RBD.set_configuration!(state, x[1:nn])
+        # RBD.set_configuration!(state, x[1:nn])
+        RBD.set_configuration!(state, x)
         idx = 1;
         for jointname in info.jnames
             body, point = get_joint(robot, jointname);
@@ -29,7 +30,7 @@ function get_full_fk_fn(info::RobotInfo, robot::Mechanism, cache::StateCache)
     end
 end
 
-function get_eef_posn_fn(info::RobotInfo, robot::Mechanism, cache::StateCache)
+function get_eef_trans_fn(info::RobotInfo, robot::Mechanism, cache::StateCache)
     ee_body, ee_point = get_joint(robot, info.eef_name);
 
     world = root_frame(robot)
@@ -38,7 +39,8 @@ function get_eef_posn_fn(info::RobotInfo, robot::Mechanism, cache::StateCache)
     function ee_position(x::AbstractVector{T}) where T
         state = cache[T]
         RBD.set_configuration!(state, x[1:nn])
-        RBD.transform(state, ee_point, world).v
+        # RBD.transform(state, ee_point, world)
+        RBD.transform_to_root(state, ee_body)
     end
 end
 
@@ -46,14 +48,15 @@ function get_probinfo(params::ComotoParameters, info::RobotInfo,
     means_filepath::String="means.csv", vars_filepath::String="vars.csv")
     
     joint_tree = parse_urdf(info.urdf_path, remove_fixed_tree_joints=false)
-    print(joint_tree)
+    # print(joint_tree)
     cache = StateCache(joint_tree);
 
-    end_effector_fn = get_eef_posn_fn(info, joint_tree, cache);
+    end_effector_fn = get_eef_trans_fn(info, joint_tree, cache);
     full_fk_fn = get_full_fk_fn(info, joint_tree, cache);
     
     # BEWARE OF HARDCODED OFFSET YIKES YIKES YIKES
-    human_traj, head_traj, human_vars_traj, human_goal = read_human_traj_files(means_filepath, vars_filepath, offset=[0.5, 0., -0.75]);
+    # human_traj, head_traj, human_vars_traj, human_goal = read_human_traj_files(means_filepath, vars_filepath, offset=[0.5, 0., -0.75]);
+    human_traj, head_traj, human_vars_traj, human_goal = read_human_traj_files(means_filepath, vars_filepath);
     human_traj = resample_human_traj(human_traj, params.n_timesteps);
     head_traj = resample_human_traj(head_traj, params.n_timesteps);
     human_vars_traj = resample_human_traj(human_vars_traj, params.n_timesteps);

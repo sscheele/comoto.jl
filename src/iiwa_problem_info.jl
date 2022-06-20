@@ -61,7 +61,8 @@ function get_kuka_probinfo(params::ComotoParameters, urdf_filepath::String="kuka
     end_effector_fn = get_kuka_ee_postition_fun(kuka_tree, cache);
     # jacobian_fn = get_kuka_jacobian_fun(kuka_tree);
     
-    human_traj, head_traj, human_vars_traj, human_goal = read_human_traj_files(means_filepath, vars_filepath, offset=[0.5, 0., -0.75]);
+    # human_traj, head_traj, human_vars_traj, human_goal = read_human_traj_files(means_filepath, vars_filepath, offset=[0.5, 0., -0.75]);
+    human_traj, head_traj, human_vars_traj, human_goal = read_human_traj_files(means_filepath, vars_filepath);
     human_traj = resample_human_traj(human_traj, params.n_timesteps);
     head_traj = resample_human_traj(head_traj, params.n_timesteps);
     human_vars_traj = resample_human_traj(human_vars_traj, params.n_timesteps);
